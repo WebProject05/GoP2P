@@ -43,15 +43,12 @@ func StartChatClient(targetIP string) {
 	handleChatSession(conn)
 }
 
-// internal/chat/chat.go
-// (Add "encoding/binary" and "p2p-share/internal/crypto" to your imports)
-
 func handleChatSession(conn net.Conn) {
 	defer conn.Close()
 
 	fmt.Println("[Negotiating secure connection...]")
 
-	// --- 1. KEY EXCHANGE HANDSHAKE ---
+	// Key Sharing
 	
 	// Generate our local ECDH keys
 	privKey, pubKeyBytes, err := crypto.GenerateKeyPair()
