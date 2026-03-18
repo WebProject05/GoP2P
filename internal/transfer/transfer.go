@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 )
 
-const FilePort = ":9998"
+const (
+	FilePort  = ":9998"
+	ChunkSize = 32 * 1024 // 32KB chunks
+)
 
 // This function listens for incoming file transfers
 func StartFileServer() {
@@ -35,35 +38,50 @@ func StartFileServer() {
 func handleIncomingFile(conn net.Conn) {
 	defer conn.Close()
 
-	// Reading the length of the filename
 	var nameLen int64
 	binary.Read(conn, binary.LittleEndian, &nameLen)
 
-	// Read the actual filename
 	nameBytes := make([]byte, nameLen)
-	conn.Read(nameBytes)
+	io.ReadFull(conn, nameBytes)
 	filename := string(nameBytes)
 
-	// Read the file size
 	var fileSize int64
 	binary.Read(conn, binary.LittleEndian, &fileSize)
 
+	fmt.Printf("\nReceiving file: %s (%d bytes)...\n", filename, fileSize)
 
-	// Create the file and copy the data
-	outFile, err := os.Create("received_"+filename)
+	outFile, err := os.Create("received_" + filename)
 	if err != nil {
-		fmt.Println("Error Creating the file:", err)
+		fmt.Println("Error creating file:", err)
 		return
 	}
-
 	defer outFile.Close()
 
-	io.CopyN(outFile, conn, fileSize)
-	fmt.Println("File Received Successfully.")
+	// Track progress during receipt
+	receivedBytes := int64(0)
+	buffer := make([]byte, ChunkSize)
+
+	for receivedBytes < fileSize {
+		n, err := conn.Read(buffer)
+		if err != nil && err != io.EOF {
+			fmt.Println("\nError reading chunk:", err)
+			break
+		}
+		if n == 0 {
+			break
+		}
+
+		outFile.Write(buffer[:n])
+		receivedBytes += int64(n)
+
+		// Calculate and print percentage
+		progress := float64(receivedBytes) / float64(fileSize) * 100
+		fmt.Printf("\rProgress: %.2f%%", progress)
+	}
+
+	fmt.Println("\nFile received successfully!")
 }
 
-
-//This function connects to a specfic peer and then sends a file
 func SendFile(targetIP string, filePath string) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -73,6 +91,7 @@ func SendFile(targetIP string, filePath string) {
 	defer file.Close()
 
 	stat, _ := file.Stat()
+	fileSize := stat.Size()
 	filename := filepath.Base(filePath)
 
 	conn, err := net.Dial("tcp", targetIP+FilePort)
@@ -84,14 +103,30 @@ func SendFile(targetIP string, filePath string) {
 
 	fmt.Printf("Sending %s to %s...\n", filename, targetIP)
 
-	// Send filename length
 	binary.Write(conn, binary.LittleEndian, int64(len(filename)))
-	// Send filename
 	conn.Write([]byte(filename))
-	// Send file size
-	binary.Write(conn, binary.LittleEndian, stat.Size())
+	binary.Write(conn, binary.LittleEndian, fileSize)
 
-	// Send file data
-	io.Copy(conn, file)
-	fmt.Println("Transfer complete!")
+	// Send in chunks and track progress
+	sentBytes := int64(0)
+	buffer := make([]byte, ChunkSize)
+
+	for {
+		n, err := file.Read(buffer)
+		if err != nil && err != io.EOF {
+			fmt.Println("\nError reading file:", err)
+			break
+		}
+		if n == 0 {
+			break
+		}
+
+		conn.Write(buffer[:n])
+		sentBytes += int64(n)
+
+		progress := float64(sentBytes) / float64(fileSize) * 100
+		fmt.Printf("\rProgress: %.2f%%", progress)
+	}
+
+	fmt.Println("\nTransfer complete!")
 }
