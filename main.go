@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 
@@ -19,28 +20,8 @@ func main() {
 	command := os.Args[1]
 
 	switch command {
-	case "scan":
-		// Updated to use the new callback-based scanner
-		fmt.Println("Scanning network... (Press Ctrl+C to stop)")
-		discovery.ScanNetwork(func(ip, username string) {
-			fmt.Printf("Found device: %s (User: %s)\n", ip, username)
-		})
-
-	case "listen":
-		// Original 1-on-1 listener
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: p2p listen <username>")
-			return
-		}
-		username := os.Args[2]
-		fmt.Printf("Starting P2P node as '%s'...\n", username)
-		
-		go discovery.StartBroadcaster(username)
-		go chat.StartChatServer()  // Listens on 9997 for private chats
-		transfer.StartFileServer() // Listens on 9998 for files (blocks main thread)
-
 	case "send":
-		// Original file transfer
+		// Direct file transfer (requires known IP)
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: p2p send <IP> <file>")
 			return
@@ -48,7 +29,7 @@ func main() {
 		transfer.SendFile(os.Args[2], os.Args[3])
 
 	case "chat":
-		// Original 1-on-1 private chat
+		// Direct 1-on-1 private chat (requires known IP)
 		if len(os.Args) < 3 {
 			fmt.Println("Usage: p2p chat <IP>")
 			return
@@ -56,16 +37,34 @@ func main() {
 		chat.StartChatClient(os.Args[2])
 
 	case "room":
-		// The new decentralized LAN common room
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: p2p room <username>")
+		// The new Internet-ready Decentralized Mesh Room
+		if len(os.Args) < 4 {
+			fmt.Println("Usage: p2p room <username> <signaling_ip>")
+			fmt.Println("Example: p2p room Alice 127.0.0.1")
 			return
 		}
 		username := os.Args[2]
+		signalingIP := os.Args[3]
 		
-		go discovery.StartBroadcaster(username)
-		go discovery.ScanNetwork(chat.HandleNewDiscovery)
-		chat.StartRoom(username) // Listens on 9996 for mesh network
+		// 1. Start the local P2P listener on a dynamic port
+		tcpPort := chat.InitRoom(username)
+		if tcpPort == 0 {
+			return
+		}
+		
+		// 2. Reach out to the Matchmaker to find peers and punch holes
+		go discovery.ConnectToSignaling(signalingIP, username, tcpPort, chat.HandleNewDiscovery)
+
+		// 3. Handle typing in the main thread (Blocks)
+		scanner := bufio.NewScanner(os.Stdin)
+		for scanner.Scan() {
+			msg := scanner.Text()
+			if msg != "" {
+				chat.BroadcastToRoom(msg)
+				// Local echo: moves cursor up, clears line, and prints formatted message
+				fmt.Printf("\033[1A\033[K%s: %s\n> ", username, msg)
+			}
+		}
 
 	default:
 		printUsage()
@@ -73,11 +72,9 @@ func main() {
 }
 
 func printUsage() {
-	fmt.Println("P2P File Sharing & Chat Tool")
+	fmt.Println("P2P File Sharing & Chat Tool (WAN Edition)")
 	fmt.Println("Commands:")
-	fmt.Println("  listen <user>      - Listen for private 1-on-1 chats and files")
-	fmt.Println("  scan               - Scan local network for active peers")
-	fmt.Println("  send <IP> <file>   - Send a file to a specific peer")
-	fmt.Println("  chat <IP>          - Start a private, encrypted 1-on-1 chat")
-	fmt.Println("  room <user>        - Join the encrypted LAN common room")
+	fmt.Println("  room <user> <signaling_ip> - Join the decentralized chat mesh via Matchmaker")
+	fmt.Println("  send <IP> <file>           - Send a file directly to a known peer IP")
+	fmt.Println("  chat <IP>                  - Start a private 1-on-1 chat with a known IP")
 }

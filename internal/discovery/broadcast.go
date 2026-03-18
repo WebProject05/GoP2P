@@ -2,51 +2,41 @@
 package discovery
 
 import (
+	"bufio"
 	"fmt"
 	"net"
 	"strings"
-	"time"
 )
 
-const DiscoveryPort = ":9999"
-
-// StartBroadcaster now includes the username in the payload
-func StartBroadcaster(username string) {
-	conn, err := net.Dial("udp", "255.255.255.255"+DiscoveryPort)
+// ConnectToSignaling reaches out to the matchmaker, registers itself, and learns about others
+func ConnectToSignaling(serverIP, username string, myP2PPort int, onPeerDiscovered func(ip, port, username string)) {
+	// Connect to the central signaling server
+	conn, err := net.Dial("tcp", serverIP+":8080")
 	if err != nil {
-		fmt.Println("Broadcast setup failed:", err)
+		fmt.Println("\n[System Error] Could not reach Signaling Server at", serverIP)
 		return
 	}
 	defer conn.Close()
 
-	msg := fmt.Sprintf("P2P_HELLO|%s", username)
-	for {
-		conn.Write([]byte(msg))
-		time.Sleep(3 * time.Second)
-	}
-}
+	// 1. Register ourselves with our specific P2P TCP port
+	registration := fmt.Sprintf("REGISTER|%s|%d\n", username, myP2PPort)
+	conn.Write([]byte(registration))
 
-// ScanNetwork now takes a callback to trigger TCP connections when a peer is found
-func ScanNetwork(onPeerDiscovered func(ip string, username string)) {
-	addr, _ := net.ResolveUDPAddr("udp", DiscoveryPort)
-	conn, _ := net.ListenUDP("udp", addr)
-	defer conn.Close()
-
-	buffer := make([]byte, 1024)
-	for {
-		n, remoteAddr, err := conn.ReadFromUDP(buffer)
-		if err != nil {
-			continue
-		}
-
-		payload := string(buffer[:n])
-		parts := strings.Split(payload, "|")
+	// 2. Wait for the server to send us the list of active peers
+	scanner := bufio.NewScanner(conn)
+	for scanner.Scan() {
+		msg := scanner.Text()
+		parts := strings.Split(msg, "|")
 		
-		if len(parts) == 2 && parts[0] == "P2P_HELLO" {
-			ip := remoteAddr.IP.String()
+		if len(parts) == 3 && parts[0] == "PEER" {
 			peerUsername := parts[1]
-			// Pass the discovered peer to the room manager
-			onPeerDiscovered(ip, peerUsername)
+			peerAddr := parts[2]
+			
+			addrParts := strings.Split(peerAddr, ":")
+			if len(addrParts) == 2 {
+				// Pass the discovered peer back to the Room Manager to establish the E2E tunnel
+				onPeerDiscovered(addrParts[0], addrParts[1], peerUsername)
+			}
 		}
 	}
 }
