@@ -89,15 +89,11 @@ func connectToRoomPeer(peerAddr string) {
 
 func addPeerToRoom(peerAddr, username string, conn net.Conn, aesKey []byte) {
 	peerMutex.Lock()
-	activePeers[peerAddr] = &RoomPeer{
-		Username: username,
-		Conn:     conn,
-		AESKey:   aesKey,
-	}
+	activePeers[peerAddr] = &RoomPeer{Username: username, Conn: conn, AESKey: aesKey}
 	peerMutex.Unlock()
 
-	// fmt.Printf("\n[System] %s joined the room.\n> ", username)
 	AddSystemMessage(username + " joined the room.")
+	refreshUI_Roster()
 	go receiveFromPeer(peerAddr)
 }
 
@@ -112,14 +108,22 @@ func receiveFromPeer(peerAddr string) {
 		decryptedMsg, err := crypto.Decrypt(encryptedMsg, peer.AESKey)
 
 		if err == nil {
-			AddRemoteMessage(peer.Username, decryptedMsg)
+			if decryptedMsg == "__TYPING__" {
+				SetTyping(peer.Username)
+			} else {
+				ClearTyping(peer.Username)
+
+				AddRemoteMessage(peer.Username, decryptedMsg)
+			}
 		}
 	}
 
 	peerMutex.Lock()
 	delete(activePeers, peerAddr)
 	peerMutex.Unlock()
+
 	AddSystemMessage(peer.Username + " left the room.")
+	refreshUI_Roster() // NEW: Update the side panel
 }
 
 func BroadcastToRoom(message string) {
@@ -156,4 +160,15 @@ func performHandshake(conn net.Conn, myUsername string) ([]byte, string, error) 
 
 	aesKey, err := crypto.ComputeSharedSecret(privKey, peerPubKeyBytes)
 	return aesKey, peerName, err
+}
+
+func refreshUI_Roster() {
+	peerMutex.RLock()
+	var users []string
+	users = append(users, myUsername+" (You)")
+	for _, p := range activePeers {
+		users = append(users, p.Username)
+	}
+	peerMutex.RUnlock()
+	UpdateRoster(users)
 }

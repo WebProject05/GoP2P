@@ -50,9 +50,16 @@ func main() {
 		go discovery.ConnectToSignaling(signalingIP, username, tcpPort, chat.HandleNewDiscovery)
 
 		// Start the UI and pass the broadcast function as a callback
-		chat.StartUI(username, func(msg string) {
-			chat.BroadcastToRoom(msg)
-		})
+		chat.StartUI(username,
+			func(msg string) {
+				// On Enter Press: Send actual message
+				chat.BroadcastToRoom(msg)
+			},
+			func() {
+				// On Keystroke: Send hidden typing indicator
+				chat.BroadcastToRoom("__TYPING__")
+			},
+		)
 
 	default:
 		printUsage()
