@@ -1,4 +1,3 @@
-// cmd/signaler/main.go
 package main
 
 import (

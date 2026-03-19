@@ -1,4 +1,3 @@
-// internal/discovery/broadcast.go
 package discovery
 
 import (

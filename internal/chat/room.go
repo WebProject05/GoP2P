@@ -1,4 +1,3 @@
-// internal/chat/room.go
 package chat
 
 import (
