@@ -32,9 +32,9 @@ func InitRoom(username string) int {
 		fmt.Println("\n[System Error] Could not bind to any TCP port.")
 		return 0
 	}
-	
+
 	port := listener.Addr().(*net.TCPAddr).Port
-	fmt.Printf("Joined Common Room as '%s'. Type to broadcast...\n> ", myUsername)
+	// fmt.Printf("Joined Common Room as '%s'. Type to broadcast...\n> ", myUsername)
 
 	go func() {
 		defer listener.Close()
@@ -97,7 +97,8 @@ func addPeerToRoom(peerAddr, username string, conn net.Conn, aesKey []byte) {
 	}
 	peerMutex.Unlock()
 
-	fmt.Printf("\n[System] %s joined the room.\n> ", username)
+	// fmt.Printf("\n[System] %s joined the room.\n> ", username)
+	AddSystemMessage(username + " joined the room.")
 	go receiveFromPeer(peerAddr)
 }
 
@@ -110,16 +111,16 @@ func receiveFromPeer(peerAddr string) {
 	for scanner.Scan() {
 		encryptedMsg := scanner.Text()
 		decryptedMsg, err := crypto.Decrypt(encryptedMsg, peer.AESKey)
-		
+
 		if err == nil {
-			fmt.Printf("\r%s: %s\n> ", peer.Username, decryptedMsg)
+			AddRemoteMessage(peer.Username, decryptedMsg)
 		}
 	}
 
 	peerMutex.Lock()
 	delete(activePeers, peerAddr)
 	peerMutex.Unlock()
-	fmt.Printf("\n[System] %s left the room.\n> ", peer.Username)
+	AddSystemMessage(peer.Username + " left the room.")
 }
 
 func BroadcastToRoom(message string) {
@@ -132,7 +133,7 @@ func BroadcastToRoom(message string) {
 			peer.Conn.Write([]byte(encryptedMsg + "\n"))
 		}
 	}
-	fmt.Print("> ")
+	// fmt.Print("> ")
 }
 
 func performHandshake(conn net.Conn, myUsername string) ([]byte, string, error) {

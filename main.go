@@ -2,7 +2,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 
@@ -37,34 +36,24 @@ func main() {
 		chat.StartChatClient(os.Args[2])
 
 	case "room":
-		// The new Internet-ready Decentralized Mesh Room
 		if len(os.Args) < 4 {
 			fmt.Println("Usage: p2p room <username> <signaling_ip>")
-			fmt.Println("Example: p2p room Alice 127.0.0.1")
 			return
 		}
 		username := os.Args[2]
 		signalingIP := os.Args[3]
-		
-		// 1. Start the local P2P listener on a dynamic port
+
 		tcpPort := chat.InitRoom(username)
 		if tcpPort == 0 {
 			return
 		}
-		
-		// 2. Reach out to the Matchmaker to find peers and punch holes
+
 		go discovery.ConnectToSignaling(signalingIP, username, tcpPort, chat.HandleNewDiscovery)
 
-		// 3. Handle typing in the main thread (Blocks)
-		scanner := bufio.NewScanner(os.Stdin)
-		for scanner.Scan() {
-			msg := scanner.Text()
-			if msg != "" {
-				chat.BroadcastToRoom(msg)
-				// Local echo: moves cursor up, clears line, and prints formatted message
-				fmt.Printf("\033[1A\033[K%s: %s\n> ", username, msg)
-			}
-		}
+		// Start the UI and pass the broadcast function as a callback
+		chat.StartUI(username, func(msg string) {
+			chat.BroadcastToRoom(msg)
+		})
 
 	default:
 		printUsage()
