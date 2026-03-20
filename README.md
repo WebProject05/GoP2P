@@ -1,4 +1,4 @@
-# P2P Share
+# GoP2P
 
 A decentralized peer-to-peer file sharing and chat application built in Go. This tool enables secure, direct communication and file transfers between peers without relying on centralized servers for data transmission.
 
