@@ -6,9 +6,13 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 
 	"p2p-share/internal/crypto"
+	"p2p-share/internal/transfer"
 )
 
 type RoomPeer struct {
@@ -110,9 +114,39 @@ func receiveFromPeer(peerAddr string) {
 		if err == nil {
 			if decryptedMsg == "__TYPING__" {
 				SetTyping(peer.Username)
+			} else if strings.HasPrefix(decryptedMsg, "__FILE_OFFER__|") { // <--- THIS IS THE FIX
+
+				// Parse the incoming hidden file offer
+				parts := strings.Split(decryptedMsg, "|")
+				if len(parts) == 4 {
+					filename := parts[1]
+					filesize := parts[2]
+					port := parts[3]
+
+					// Extract the sender's base IP from their chat connection
+					ip := strings.Split(peer.Conn.RemoteAddr().String(), ":")[0]
+					targetAddr := fmt.Sprintf("%s:%s", ip, port)
+
+					AddSystemMessage(fmt.Sprintf("%s is sending '%s'. Downloading...", peer.Username, filename))
+
+					// Start the download in the background
+					go func() {
+						var size int64
+						fmt.Sscanf(filesize, "%d", &size)
+
+						err := transfer.FetchFile(targetAddr, filename, size, func(pct int) {
+							UpdateTransferUI(filename, pct, false)
+						})
+
+						if err != nil {
+							AddSystemMessage("Failed to download " + filename)
+						} else {
+							AddSystemMessage("Download complete: " + filename)
+						}
+					}()
+				}
 			} else {
 				ClearTyping(peer.Username)
-
 				AddRemoteMessage(peer.Username, decryptedMsg)
 			}
 		}
@@ -171,4 +205,46 @@ func refreshUI_Roster() {
 	}
 	peerMutex.RUnlock()
 	UpdateRoster(users)
+}
+
+func SendFileToPeer(targetUser, filePath string) {
+	peerMutex.RLock()
+	var targetPeer *RoomPeer
+	for _, p := range activePeers {
+		if p.Username == targetUser {
+			targetPeer = p
+			break
+		}
+	}
+	peerMutex.RUnlock()
+
+	if targetPeer == nil {
+		AddSystemMessage("User '" + targetUser + "' not found.")
+		return
+	}
+
+	stat, err := os.Stat(filePath)
+	if err != nil {
+		AddSystemMessage("File not found: " + filePath)
+		return
+	}
+
+	filename := filepath.Base(filePath)
+
+	// Open the local dynamic port
+	port, err := transfer.ServeFile(filePath, func(pct int) {
+		UpdateTransferUI(filename, pct, true)
+	})
+
+	if err != nil {
+		AddSystemMessage("Failed to start transfer server.")
+		return
+	}
+
+	// Send the hidden control packet to the specific user
+	offerMsg := fmt.Sprintf("__FILE_OFFER__|%s|%d|%d", filename, stat.Size(), port)
+	encryptedMsg, _ := crypto.Encrypt(offerMsg, targetPeer.AESKey)
+	targetPeer.Conn.Write([]byte(encryptedMsg + "\n"))
+
+	AddSystemMessage("Offering file '" + filename + "' to " + targetUser + "...")
 }

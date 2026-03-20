@@ -22,6 +22,7 @@ var (
 	scrollOffset int
 	roster       []string
 	activeTyping = make(map[string]time.Time)
+	activeTransfers = make(map[string]int)
 )
 
 func StartUI(username string, onSend func(string), onType func()) {
@@ -41,8 +42,19 @@ func StartUI(username string, onSend func(string), onType func()) {
 				return
 			} else if ev.Key == termbox.KeyEnter {
 				if inputBuffer != "" {
-					onSend(inputBuffer)
-					AddLocalMessage(username, inputBuffer)
+					// Check for send command: /send <username> <filepath>
+					if strings.HasPrefix(inputBuffer, "/send ") {
+						parts := strings.SplitN(inputBuffer, " ", 3)
+						if len(parts) == 3 {
+							SendFileToPeer(parts[1], parts[2])
+						} else {
+							AddSystemMessage("Usage: /send <username> <filepath>")
+						}
+					} else {
+						// Normal chat message
+						onSend(inputBuffer)
+						AddLocalMessage(username, inputBuffer)
+					}
 					inputBuffer = ""
 					scrollOffset = 0 // Snap to bottom on send
 				}
@@ -189,13 +201,39 @@ func redrawAll(username string) {
 
 func drawRoster(x, y, width, height int) {
 	drawText(x+1, y, "ONLINE PEERS", termbox.ColorGreen|termbox.AttrBold)
-	drawText(x+1, y+1, strings.Repeat("-", width-2), termbox.ColorCyan)
+	drawText(x+1, y+1, strings.Repeat("─", width-2), termbox.ColorCyan)
 	
 	for i, user := range roster {
-		if i >= height-3 {
+		if i >= height-10 {
 			break
 		}
 		drawText(x+2, y+2+i, user, getUserColor(user))
+	}
+
+	// Draw Active Transfers at the bottom of the roster panel
+	if len(activeTransfers) > 0 {
+		transferStartY := y + height - 2 - (len(activeTransfers) * 2)
+		drawText(x+1, transferStartY-1, "TRANSFERS", termbox.ColorYellow|termbox.AttrBold)
+		drawText(x+1, transferStartY, strings.Repeat("─", width-2), termbox.ColorCyan)
+		
+		i := 0
+		for name, pct := range activeTransfers {
+			// Ensure filename fits in panel
+			display := name
+			if len(display) > width-4 {
+				display = display[:width-7] + "..."
+			}
+			
+			// Draw name and percentage
+			drawText(x+2, transferStartY+1+(i*2), fmt.Sprintf("%s (%d%%)", display, pct), termbox.ColorWhite)
+			
+			// Draw ASCII Progress Bar
+			barWidth := width - 4
+			filled := int((float32(pct) / 100.0) * float32(barWidth))
+			bar := strings.Repeat("█", filled) + strings.Repeat("░", barWidth-filled)
+			drawText(x+2, transferStartY+2+(i*2), bar, termbox.ColorCyan)
+			i++
+		}
 	}
 }
 
@@ -274,5 +312,20 @@ func getTypingString() string {
 
 func ClearTyping(user string) {
 	delete(activeTyping, user)
+	redrawAll("")
+}
+
+func UpdateTransferUI(filename string, progress int, isUpload bool) {
+	direction := "DL"
+	if isUpload {
+		direction = "UL"
+	}
+	key := fmt.Sprintf("[%s] %s", direction, filename)
+	
+	if progress >= 100 {
+		delete(activeTransfers, key)
+	} else {
+		activeTransfers[key] = progress
+	}
 	redrawAll("")
 }
