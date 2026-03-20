@@ -145,6 +145,12 @@ func receiveFromPeer(peerAddr string) {
 						}
 					}()
 				}
+			} else if strings.HasPrefix(decryptedMsg, "__PRIVATE__|") {
+				//Catching private messages
+				ClearTyping(peer.Username)
+				actualMsg := strings.TrimPrefix(decryptedMsg, "__PRIVATE__|")
+				// Displaying as a highlighted system message so it stands out
+				AddSystemMessage(fmt.Sprintf("(Whisper from %s): %s", peer.Username, actualMsg))
 			} else {
 				ClearTyping(peer.Username)
 				AddRemoteMessage(peer.Username, decryptedMsg)
@@ -247,4 +253,31 @@ func SendFileToPeer(targetUser, filePath string) {
 	targetPeer.Conn.Write([]byte(encryptedMsg + "\n"))
 
 	AddSystemMessage("Offering file '" + filename + "' to " + targetUser + "...")
+}
+
+func SendPrivateMessage(targetUser, message string) {
+	peerMutex.RLock()
+	var targetPeer *RoomPeer
+	for _, p := range activePeers {
+		if p.Username == targetUser {
+			targetPeer = p
+			break
+		}
+	}
+	peerMutex.RUnlock()
+
+	if targetPeer == nil {
+		AddSystemMessage("User '" + targetUser + "' not found.")
+		return
+	}
+
+	// Prefix the message so the receiver knows it's private
+	privateMsg := "__PRIVATE__|" + message
+	encryptedMsg, _ := crypto.Encrypt(privateMsg, targetPeer.AESKey)
+
+	// Send ONLY to this specific peer
+	targetPeer.Conn.Write([]byte(encryptedMsg + "\n"))
+
+	// Print it to our own screen in a special color
+	AddSystemMessage(fmt.Sprintf("(Whisper to %s): %s", targetUser, message))
 }
