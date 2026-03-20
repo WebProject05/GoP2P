@@ -57,7 +57,9 @@ func StartUI(username string, onSend func(string), onType func()) {
 						} else {
 							AddSystemMessage("Usage: /msg <username> <message>")
 						}
-					} else {
+					} else if strings.TrimSpace(inputBuffer) == "/peers" {
+						ShowActivePeers()
+					}else {
 						// Normal chat message
 						onSend(inputBuffer)
 						AddLocalMessage(username, inputBuffer)

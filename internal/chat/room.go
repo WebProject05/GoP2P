@@ -281,3 +281,23 @@ func SendPrivateMessage(targetUser, message string) {
 	// Print it to our own screen in a special color
 	AddSystemMessage(fmt.Sprintf("(Whisper to %s): %s", targetUser, message))
 }
+
+// ShowActivePeers formats and displays the IP addresses of everyone in the room
+func ShowActivePeers() {
+	peerMutex.RLock()
+	defer peerMutex.RUnlock()
+
+	if len(activePeers) == 0 {
+		AddSystemMessage("No other peers are currently in the room.")
+		return
+	}
+
+	AddSystemMessage("--- Active Peers List ---")
+	for addr, peer := range activePeers {
+		// The addr string usually looks like "192.168.1.5:49152"
+		// We split it to just grab the IP part
+		ip := strings.Split(addr, ":")[0]
+		AddSystemMessage(fmt.Sprintf("%s: %s", peer.Username, ip))
+	}
+	AddSystemMessage("-------------------------")
+}
